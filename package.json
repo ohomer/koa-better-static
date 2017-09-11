@@ -11,14 +11,15 @@
     "sendfile"
   ],
   "files": [
-    "index.js", "send.js"
+    "index.js",
+    "send.js"
   ],
   "devDependencies": {
-    "istanbul": "0",
-    "koa": "1",
-    "koa-mount": "^1.3.0",
-    "mocha": "2",
-    "supertest": "1"
+    "istanbul": "^0.4.5",
+    "koa": "^2.3.0",
+    "koa-mount": "^3.0.0",
+    "mocha": "^3.5.2",
+    "supertest": "^3.0.0"
   },
   "license": "MIT",
   "dependencies": {
