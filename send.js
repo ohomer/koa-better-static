@@ -2,10 +2,10 @@
  * Module dependencies.
  */
 
-var debug = require('debug')('koa-better-static:send');
-var assert = require('assert');
-var extname = require('path').extname;
-var fs = require('fs');
+const debug = require('debug')('koa-better-static:send');
+const assert = require('assert');
+const {extname} = require('path');
+const fs = require('fs');
 
 /**
  * Expose `send()`.
@@ -25,75 +25,76 @@ module.exports = send;
  * @api public
  */
 
-
 function stat(path) {
-  return new Promise(function(resolve, reject) {
-    fs.stat(path, function(err, data) {
-      if (err) return reject(err);
-      resolve(data);
-    })
-  });
+	return new Promise((resolve, reject) => {
+		fs.stat(path, (err, data) => {
+			if (err) {
+				return reject(err);
+			}
+			resolve(data);
+		});
+	});
 }
 
+async function send(ctx, path, opts) {
+	assert(ctx, 'koa context required');
+	assert(path, 'pathname required');
+	assert(opts, 'opts required');
 
+  // Options
+	debug('send "%s" %j', path, opts);
+	const index = opts.index;
+	const maxage = opts.maxage;
+	const format = opts.format;
+	const ifModifiedSinceSupport = opts.ifModifiedSinceSupport;
 
-function* send(ctx, path, opts) {
-    assert(ctx, 'koa context required');
-    assert(path, 'pathname required');
-    assert(opts, 'opts required');
+  // Stat
+	let stats;
+	try {
+		stats = await stat(path);
+	} catch (err) {
+		const notfound = ['ENOENT', 'ENAMETOOLONG', 'ENOTDIR'];
+		if (notfound.indexOf(err.code) !== -1) {
+			return;
+		}
+		err.status = 500;
+		throw err;
+	}
 
-    // options
-    debug('send "%s" %j', path, opts);
-    var index = opts.index;
-    var maxage = opts.maxage;
-    var format = opts.format;
-    var ifModifiedSinceSupport = opts.ifModifiedSinceSupport;
+  // Format the path to serve static file servers
+  // and not require a trailing slash for directories,
+  // so that you can do both `/directory` and `/directory/`
+	if (stats.isDirectory()) {
+		if (format && index) {
+			path += '/' + index;
+			stats = await stat(path);
+		} else {
+			return;
+		}
+	}
 
-    // stat
-    var stats;
-    try {
-      stats = yield stat(path);
-    } catch (err) {
-      var notfound = ['ENOENT', 'ENAMETOOLONG', 'ENOTDIR'];
-      if (~notfound.indexOf(err.code)) return;
-      err.status = 500;
-      throw err;
-    }
+	ctx.set('Cache-Control', 'max-age=' + ((maxage / 1000) | 0));
 
+  // Check if we can return a cache hit
+	if (ifModifiedSinceSupport) {
+		const ims = ctx.get('If-Modified-Since');
 
-    // Format the path to serve static file servers
-    // and not require a trailing slash for directories,
-    // so that you can do both `/directory` and `/directory/`
-    if (stats.isDirectory()) {
-      if (format && index) {
-        path += '/' + index;
-        stats = yield stat(path);
-      } else {
-        return;
-      }
-    }
+		const ms = Date.parse(ims);
 
-    ctx.set('Cache-Control', 'max-age=' + (maxage / 1000 | 0));
+		if (
+      ms &&
+      Math.floor(ms / 1000) === Math.floor(stats.mtime.getTime() / 1000)
+    ) {
+			ctx.status = 304; // Not modified
+			return path;
+		}
+	}
 
-    // Check if we can return a cache hit
-    if (ifModifiedSinceSupport) {
-      var ims = ctx.get('If-Modified-Since');
+  // Stream
+	ctx.set('Last-Modified', stats.mtime.toUTCString());
+	ctx.set('Content-Length', stats.size);
+	ctx.type = extname(path);
+	ctx.body = fs.createReadStream(path);
 
-      var ms = Date.parse(ims);
-
-      if (ms && Math.floor(ms/1000) === Math.floor(stats.mtime.getTime()/1000)) {
-        ctx.status = 304; // not modified
-        return path;
-      }
-    }
-
-    // stream
-    ctx.set('Last-Modified', stats.mtime.toUTCString());
-    ctx.set('Content-Length', stats.size);
-    ctx.type = extname(path);
-    ctx.body = fs.createReadStream(path);
-
-    return path;
+	return path;
 }
-
-
